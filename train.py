@@ -3,14 +3,16 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, transforms
-import torchvision.models as models
+# import torchvision.models as models
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
 import PIL
 
-from bdjscc import BDJSCC_Binary as model
+from bdjscc import BDJSCC as model
 
 writer = SummaryWriter()
+
+torch.cuda.set_device(0)
 
 # Save the model
 def save_model(model, optimizer, epoch, loss, filename):
@@ -44,8 +46,8 @@ def store_test_image(input, output, epoch, i):
     images_path = os.path.join(os.getcwd(), 'images')
     os.makedirs(images_path, exist_ok=True)
 
-    im_in.save(os.path.join(images_path, f'test_image_in_{epoch}_{i}.png'))
-    im_out.save(os.path.join(images_path, f'test_image_out_{epoch}_{i}.png'))
+    im_in.save(os.path.join(images_path, f'test_image_{epoch}_{i}_in.png'))
+    im_out.save(os.path.join(images_path, f'test_image_{epoch}_{i}_out.png'))
 
 
 
@@ -76,7 +78,7 @@ if __name__ == '__main__':
     ])
 
     train_dataset = datasets.ImageFolder('../data/imagenet/train', transform=transform)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
 
     # Train the model(autoencoder)
     if os.path.exists(checkpoint_tar):
@@ -111,10 +113,10 @@ if __name__ == '__main__':
             # Update the weights
             optimizer.step()
 
-            if i % 10 == 0:
+            if i % 10 == 0 and i != 0:
                 print(f"Epoch [{epoch}/{epochs}], Step [{i}/{len(train_loader)}], Loss: {loss.item()}")
 
-            if i % 100 == 0:
+            if i % 100 == 0 and i != 0:
                 save_model(model, optimizer, epoch, loss, checkpoint_tar)
                 store_test_image(images, output, epoch, i)
 
