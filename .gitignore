@@ -3,3 +3,4 @@ checkpoints/
 images/
 runs/
 internal_output/
+.empty/

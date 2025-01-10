@@ -1,6 +1,6 @@
 import torch
 import torchvision.transforms as transforms
-from bdjscc import BDJSCC as model
+from bdjscc import BDJSCC_ada as model
 from train import store_test_image
 from PIL import Image
 
@@ -8,9 +8,10 @@ from PIL import Image
 # Load the model
 model = model().cuda()
 
-if False:
+if True:
+
     # Load the image
-    image = Image.open('/home/Spark/learning/research/semantic_comm/data/imagenet/train/n01795545/n01795545_10144.JPEG')
+    image = Image.open('/data/Users/lanli/ReActNet-master/dataset/imagenet/val/n01440764/ILSVRC2012_val_00000293.JPEG')
     transforms = transforms.Compose([
         transforms.Resize((256, 256)),
         transforms.ToTensor()
@@ -18,7 +19,7 @@ if False:
     image = transforms(image).unsqueeze(0).cuda()
 
     # Load checkpoint
-    checkpoint = torch.load('checkpoints/checkpoint.tar')
+    checkpoint = torch.load('checkpoints/checkpoint_ada_thick_rprelu_6+_2.tar')
     model.load_state_dict(checkpoint['model'])
 
     # Forward pass
