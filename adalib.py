@@ -98,8 +98,8 @@ class AdaBin_Conv2d(nn.Conv2d):
         super(AdaBin_Conv2d, self).__init__(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
         self.a_bit = a_bit
         self.w_bit = w_bit
-        self.k = torch.tensor([10]).float().cpu()
-        self.t = torch.tensor([0.1]).float().cpu() 
+        self.k = torch.tensor([1]).float().cpu()
+        self.t = torch.tensor([1]).float().cpu() 
         self.binary_a = BinaryActivation()
 
         self.filter_size = self.kernel_size[0]*self.kernel_size[1]*self.in_channels

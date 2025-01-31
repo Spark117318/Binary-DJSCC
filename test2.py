@@ -11,7 +11,7 @@ batch_size = 256
 model = model().cuda()
 model = model.eval()
 
-checkpoint = torch.load('checkpoints/checkpoint_ada_thick_rprelu_6+.tar')
+checkpoint = torch.load('checkpoints/checkpoint_ada_thick_rprelu_6+_.tar')
 model.load_state_dict(checkpoint['model'])
 
 criteria = torch.nn.MSELoss()

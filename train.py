@@ -13,14 +13,14 @@ from bdjscc import BDJSCC_ada as model
 
 writer = SummaryWriter()
 
-torch.cuda.set_device(2)
+torch.cuda.set_device(1)
 # torch.cuda.set_per_process_memory_fraction(0.3, 2)
 
 # Save the model
 def save_model(model, optimizer, epoch, loss, filename):
     save_dict = {
         'model': model.state_dict(),
-        # 'optimizer': optimizer.state_dict(),
+        'optimizer': optimizer.state_dict(),
         'epoch': epoch,
         'loss': loss
     }
@@ -31,8 +31,10 @@ def store_test_image(input, output, epoch, i):
     images_in = input[:9]
     images_out = output[:9]
 
-    grid_in = torchvision.utils.make_grid(images_in, nrow=3, normalize=True)
-    grid_out = torchvision.utils.make_grid(images_out, nrow=3, normalize=True)
+    nrow = int(images_in.shape[0] ** 0.5)
+
+    grid_in = torchvision.utils.make_grid(images_in, nrow=nrow, normalize=True)
+    grid_out = torchvision.utils.make_grid(images_out, nrow=nrow, normalize=True)
 
     # images_in = input.cpu().detach().numpy()
     # images_out = output.cpu().detach().numpy()
@@ -61,8 +63,10 @@ if __name__ == '__main__':
 
     checkpoint_path = os.path.join(os.getcwd(), 'checkpoints')
     os.makedirs(checkpoint_path, exist_ok=True)
-    checkpoint_tar = os.path.join(checkpoint_path, 'checkpoint_ada_thick_rprelu_6+_2.tar')
-    checkpoint_tar_store = os.path.join(checkpoint_path, 'checkpoint_ada_thick_rprelu_6+_2.tar')
+    checkpoint_tar = os.path.join(checkpoint_path, 'checkpoint_ada_thick_rprelu_omini.tar')
+    checkpoint_tar_store = os.path.join(checkpoint_path, 'checkpoint_ada_thick_rprelu_omini.tar')
+    # checkpoint_tar = os.path.join(checkpoint_path, 'checkpoint_ada_thick_rprelu.tar')
+    # checkpoint_tar_store = os.path.join(checkpoint_path, 'checkpoint_ada_thick_rprelu_omini-.tar')
 
 
 
@@ -110,6 +114,7 @@ if __name__ == '__main__':
         loss = 0
 
     start_epoch = 0
+    loss_best = 1
     for epoch in range(start_epoch, epochs):
         for i, (images, _) in enumerate(train_loader):
             images = images.cuda()
@@ -147,8 +152,11 @@ if __name__ == '__main__':
                 # model.train()
 
 
-            if i % 1000 == 0 and i != 0:
-                save_model(model, optimizer, epoch, loss, checkpoint_tar_store)
+            if i % 500 == 0 and i != 0:
+                if loss.item() < loss_best:
+                    loss_best = loss.item()
+                    print(f"Saving the model with loss {loss_best}")
+                    save_model(model, optimizer, epoch, loss, checkpoint_tar_store)
                 store_test_image(images, output, epoch, i)
                 # lr_scheduler.step()
 

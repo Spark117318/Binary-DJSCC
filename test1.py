@@ -1,6 +1,6 @@
 import torch
 import torchvision.transforms as transforms
-from bdjscc import BDJSCC_ada as model
+from bdjscc import BDJSCC as model
 from train import store_test_image
 from PIL import Image
 
@@ -8,7 +8,7 @@ from PIL import Image
 # Load the model
 model = model().cuda()
 
-if True:
+if False:
 
     # Load the image
     image = Image.open('/data/Users/lanli/ReActNet-master/dataset/imagenet/val/n01440764/ILSVRC2012_val_00000293.JPEG')
@@ -26,7 +26,7 @@ if True:
     output = model(image)
 
 else:
-    a = torch.zeros(9, 3, 256, 256).cuda()+0.5
+    a = torch.zeros(1, 3, 256, 256).cuda()
     output = model(a)
 
 print(output.shape)
