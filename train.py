@@ -8,12 +8,14 @@ from torch.utils.tensorboard import SummaryWriter
 import torchvision
 import PIL
 from PIL import Image
+from ABNet import adaptive_clip_grad
 
-from bdjscc import BDJSCC_ada as model
+from bdjscc_ import BDJSCC_ada as model
+# from ABdjscc import BDJSCC_AB as model
 
 writer = SummaryWriter()
 
-torch.cuda.set_device(1)
+torch.cuda.set_device(2)
 # torch.cuda.set_per_process_memory_fraction(0.3, 2)
 
 # Save the model
@@ -58,20 +60,36 @@ def store_test_image(input, output, epoch, i):
 if __name__ == '__main__':
     # Hyperparameters
     batch_size = 32
-    epochs = 5
-    learning_rate = 1e-4
+    epochs = 10
+    learning_rate = 1e-3
+    weight_decay = 0
 
     checkpoint_path = os.path.join(os.getcwd(), 'checkpoints')
     os.makedirs(checkpoint_path, exist_ok=True)
-    checkpoint_tar = os.path.join(checkpoint_path, 'checkpoint_ada_thick_rprelu_omini.tar')
-    checkpoint_tar_store = os.path.join(checkpoint_path, 'checkpoint_ada_thick_rprelu_omini.tar')
+    checkpoint_tar = os.path.join(checkpoint_path, 'checkpoint_react_thick_qrprelu_omni_binary_1.tar')
+    checkpoint_tar_store = os.path.join(checkpoint_path, 'checkpoint_react_thick_qrprelu_omni_binary_1.tar')
+
     # checkpoint_tar = os.path.join(checkpoint_path, 'checkpoint_ada_thick_rprelu.tar')
     # checkpoint_tar_store = os.path.join(checkpoint_path, 'checkpoint_ada_thick_rprelu_omini-.tar')
 
-
-
     # Load the model
     model = model().cuda()
+
+
+    # all_parameters = model.parameters()
+    # weight_parameters = []
+    # for pname, p in model.named_parameters():
+    #     if p.ndimension() == 4 or 'conv' in pname:
+    #         weight_parameters.append(p)
+    # weight_parameters_id = list(map(id, weight_parameters))
+    # other_parameters = list(filter(lambda p: id(p) not in weight_parameters_id, all_parameters))
+
+    # optimizer = torch.optim.Adam(
+    #         [{'params' : other_parameters},
+    #         {'params' : weight_parameters, 'weight_decay' : weight_decay}],
+    #         lr=learning_rate,
+    #         betas=(0.9,0.999))
+
 
     # Load the optimizer
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -101,7 +119,7 @@ if __name__ == '__main__':
 
     # Train the model(autoencoder)
     if os.path.exists(checkpoint_tar):
-        checkpoint = torch.load(checkpoint_tar)
+        checkpoint = torch.load(checkpoint_tar, map_location='cuda:2')
         model.load_state_dict(checkpoint['model'], strict=False)
         # optimizer.load_state_dict(checkpoint['optimizer'])
         start_epoch = checkpoint['epoch']
@@ -110,8 +128,7 @@ if __name__ == '__main__':
         print(f"Resuming training from epoch {start_epoch} with loss {loss}")
 
     else:
-        start_epoch = 0
-        loss = 0
+        loss = 1
 
     start_epoch = 0
     loss_best = 1
@@ -135,6 +152,9 @@ if __name__ == '__main__':
             # Backward pass
             loss.backward()
 
+            # Clip the gradients
+            # adaptive_clip_grad(model.parameters())
+
             # Update the weights
             optimizer.step()
 
@@ -152,12 +172,12 @@ if __name__ == '__main__':
                 # model.train()
 
 
-            if i % 500 == 0 and i != 0:
+            if i % 100 == 0 and i != 0:
                 if loss.item() < loss_best:
                     loss_best = loss.item()
                     print(f"Saving the model with loss {loss_best}")
                     save_model(model, optimizer, epoch, loss, checkpoint_tar_store)
-                store_test_image(images, output, epoch, i)
+                    # store_test_image(images, output, epoch, i)
                 # lr_scheduler.step()
 
             writer.add_scalar('Loss/train1', loss.item(), epoch * len(train_loader) + i)

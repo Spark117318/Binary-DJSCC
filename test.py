@@ -2,7 +2,7 @@ import torch
 import torchvision.transforms as transforms
 import torchvision
 import matplotlib.pyplot as plt
-from bdjscc import BDJSCC_ada as BDJSCC_ada  # [bdjscc.py](bdjscc.py)
+from bdjscc_ import BDJSCC as model  # [bdjscc.py](bdjscc.py)
 from train import store_test_image           # [train.py](train.py)
 import os
 
@@ -11,23 +11,23 @@ def compute_psnr(mse):
 
 if __name__ == "__main__":
 
-    torch.cuda.set_device(0)
+    torch.cuda.set_device(2)
 
     seed = 42
     g = torch.Generator()
     g.manual_seed(seed)
 
     # Create model
-    model = BDJSCC_ada(channel_type='awgn').cuda()
+    model = model(channel_type='awgn').cuda()
 
     # Optionally load a checkpoint if available
-    checkpoint = torch.load('checkpoints/checkpoint_ada_thick_rprelu_omini.tar')
+    checkpoint = torch.load('checkpoints/checkpoint_thick_real.tar', map_location='cuda:2')
     model.load_state_dict(checkpoint['model'], strict=False)
     model.eval()
 
     # Dataloader
     val_transform = transforms.Compose([
-        transforms.Resize((256, 256)),
+        transforms.Resize((128, 128)),
         transforms.ToTensor()
     ])
     val_dataset = torchvision.datasets.ImageFolder('/data/Users/lanli/ReActNet-master/dataset/imagenet/val', transform=val_transform)

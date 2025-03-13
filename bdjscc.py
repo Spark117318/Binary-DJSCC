@@ -10,6 +10,7 @@ from adalib import AdaBin_Conv2d as conv_ada
 from adalib import Maxout
 from channel import Channel
 from SEblock import AFlayer
+from ABNet import Q_PReLU
 
 # stage_out_channel = [64] * 2 + [128] * 2 + [256] * 2
 
@@ -66,10 +67,13 @@ def channel_wise_pool(inplanes, outplanes):
 
 
 class firstconv(nn.Module):
-    def __init__(self, inp, oup):
+    def __init__(self, inp, oup, size=3, binary=False):
         super(firstconv, self).__init__()
 
-        self.conv1 = nn.Conv2d(inp, oup//4, 3, 1, 1, bias=False)
+        if binary:
+            self.conv1 = conv_ada(inp, oup//4, kernel_size=size, stride=1, padding=size//2, bias=False, w_bit=1, a_bit=0)
+        else:
+            self.conv1 = nn.Conv2d(inp, oup//4, size, 1, size//2, bias=False)
         self.px1 = nn.PixelUnshuffle(2)
 
     def forward(self, x):
@@ -77,6 +81,40 @@ class firstconv(nn.Module):
         out = self.conv1(x)
         out = self.px1(out)
 
+        return out
+
+class firstdup(nn.Module):
+    def __init__(self, inp, oup):
+        super(firstdup, self).__init__()
+        oup = oup // 4
+        self.inp = inp
+        self.oup = oup
+        # Calculate repeat factor and remainder
+        self.repeat_factor = oup // inp
+        self.remainder = oup % inp
+
+        self.px = nn.PixelUnshuffle(2)
+
+    def forward(self, x):
+        # Input shape: [batch_size, inp, height, width]
+        
+        # Handle the main repeats
+        if self.repeat_factor > 0:
+            out = x.repeat(1, self.repeat_factor, 1, 1)
+        else:
+            out = torch.tensor([], device=x.device)
+            
+        # Handle the remainder (if any)
+        if self.remainder > 0:
+            remainder_slice = x[:, :self.remainder, :, :]
+            # Concatenate the repeated tensor with the remainder
+            if self.repeat_factor > 0:
+                out = torch.cat([out, remainder_slice], dim=1)
+            else:
+                out = remainder_slice
+
+        out = self.px(out)
+        
         return out
 
 class firstconv_1(nn.Module):
@@ -95,10 +133,13 @@ class firstconv_1(nn.Module):
        
 
 class lastconv(nn.Module):
-    def __init__(self, inp, oup):
+    def __init__(self, inp, oup, size=3, binary=False):
         super(lastconv, self).__init__()
 
-        self.conv1 = nn.Conv2d(inp, oup*4, 3, 1, 1, bias=False)
+        if binary:
+            self.conv1 = conv_ada(inp, oup*4, kernel_size=size, stride=1, padding=size//2, bias=False, w_bit=1, a_bit=0)
+        else:
+            self.conv1 = nn.Conv2d(inp, oup*4, size, 1, size//2, bias=False)
         self.px1 = nn.PixelShuffle(2)
 
     def forward(self, x):
@@ -108,12 +149,16 @@ class lastconv(nn.Module):
 
         return out
 
+
 class lastconv_2(nn.Module):
-    def __init__(self, inp, oup):
+    def __init__(self, inp, oup, size=3, binary=False):
         super(lastconv_2, self).__init__()
 
         self.px1 = nn.PixelShuffle(2)
-        self.conv1 = nn.Conv2d(inp//4, oup, 3, 1, 1, bias=False)
+        if binary:
+            self.conv1 = conv_ada(inp//4, oup, kernel_size=size, stride=1, padding=size//2, bias=False, w_bit=1, a_bit=0)
+        else:
+            self.conv1 = nn.Conv2d(inp//4, oup, size, 1, size//2, bias=False)
 
     def forward(self, x):
 
@@ -517,7 +562,7 @@ class BasicBlock_transpose_2(nn.Module):
 
         self.move11 = LearnableBias(inplanes)
         # self.prelu1 = nn.PReLU(inplanes)
-        # self.move12 = LearnableBias(inplanes)
+        # self move12 = LearnableBias(inplanes)
         self.binary_activation = BinaryActivation()
 
         self.conv = conv3x3(inplanes, planes, stride)
@@ -892,20 +937,20 @@ class RealBlock_thick(nn.Module):
 
         x = out
 
-        print(out.numel())
+        # print(out.numel())
 
         out = self.conv2(out)
-        out = self.prelu4(out)
-
         shortcut = x[:, :x.shape[1]//2, :, :]
         # shortcut = self.scale2(shortcut)
         # store_internal_output(shortcut, f'internal_enc_shortcut_{shortcut.shape[1]}.png')
 
         out = out + shortcut
+        out = self.prelu4(out)
+
 
         out = self.px(out)
 
-        print(out.numel())
+        # print(out.numel())
 
         # out = self.se2(out, snr)
 
@@ -946,17 +991,17 @@ class RealBlock_thick_transpose(nn.Module):
         # out = self.se1(out, snr)
 
         x = out
-        print(out.numel())
+        # print(out.numel())
 
         out = self.conv2(out)
-        out = self.prelu4(out)
-
-
         shortcut = torch.cat((x, x), 1)
         # shortcut = self.scale2(shortcut)
         # store_internal_output(shortcut, f'internal_enc_shortcut_{shortcut.shape[1]}.png')
 
         out = out + shortcut
+        out = self.prelu4(out)
+
+
 
         out = self.px(out)
 
@@ -964,7 +1009,7 @@ class RealBlock_thick_transpose(nn.Module):
 
         # store_internal_output(out, f'internal_enc_oup_{out.shape[1]}.png')
 
-        print(out.numel())
+        # print(out.numel())
 
         assert out.shape[1] == self.planes
 
@@ -1425,20 +1470,33 @@ class AdaBlock_transpose(nn.Module):
         return out
 
 class AdaBlock_thick(nn.Module):
-    def __init__(self, inplanes, planes, stride=1):
+    def __init__(self, inplanes, planes, stride=1, ka=1, alpha=0.25, kw=0.2, binary=1, QReLU=True):
         super(AdaBlock_thick, self).__init__()
 
-        self.conv1 = conv_ada(inplanes, inplanes, kernel_size=3, stride=stride, padding=1, bias=False, w_bit=1)
+        self.move1_ = LearnableBias(inplanes)
+        self.conv1 = conv_ada(inplanes, inplanes, kernel_size=3, stride=stride, padding=1, bias=False, w_bit=binary, a_bit=1, ka=ka, kw=kw)
+        # self.conv1_ = conv_ada(inplanes, inplanes, kernel_size=3, stride=stride, padding=1, bias=False, w_bit=1, a_bit=1)
         # self.maxout1 = Maxout(inplanes)
         self.move1 = LearnableBias(inplanes)
-        self.prelu1 = nn.PReLU(inplanes)
+
+        if QReLU:
+            self.prelu1 = Q_PReLU(inplanes)
+        else:
+            self.prelu1 = nn.PReLU(inplanes)
+
         self.move2 = LearnableBias(inplanes)
 
-
-        self.conv2 = conv_ada(inplanes, inplanes//2, kernel_size=3, stride=stride, padding=1, bias=False, w_bit=1)
+        self.move2_ = LearnableBias(inplanes)
+        self.conv2 = conv_ada(inplanes, inplanes//2, kernel_size=3, stride=stride, padding=1, bias=False, w_bit=binary, a_bit=1, ka=ka, kw=kw)
+        # self.conv2_ = conv_ada(inplanes, inplanes//2, kernel_size=3, stride=stride, padding=1, bias=False, w_bit=1, a_bit=1)
         # self.maxout2 = Maxout(inplanes//2)
         self.move3 = LearnableBias(inplanes//2)
-        self.prelu2 = nn.PReLU(inplanes//2)
+
+        if QReLU:
+            self.prelu2 = Q_PReLU(inplanes//2)
+        else:
+            self.prelu2 = nn.PReLU(inplanes//2)
+
         self.move4 = LearnableBias(inplanes//2)
 
         self.px = nn.PixelUnshuffle(2)
@@ -1451,7 +1509,10 @@ class AdaBlock_thick(nn.Module):
 
     def forward(self, x):
         
-        out = x
+        # out1 = self.conv1(x)
+        # out2 = self.conv1_(x)
+        # out = out1 + out2
+        out = self.move1_(x)
         out = self.conv1(out)
         # out = self.maxout1(out)
         out = self.move1(out)
@@ -1459,9 +1520,14 @@ class AdaBlock_thick(nn.Module):
         out = self.move2(out)
 
         # shortcut = self.scale1(x)
-        out = out + x
-        x = out
+        # print(f"input_std: {torch.std(x).item()}")
+        # print(f"output_std: {torch.std(out).item()}")
+        x = out + x
 
+        # out1 = self.conv2(x)
+        # out2 = self.conv2_(x)
+        # out = out1 + out2
+        out = self.move2_(x)
         out = self.conv2(out)
         # out = self.maxout2(out)
         out = self.move3(out)
@@ -1471,6 +1537,8 @@ class AdaBlock_thick(nn.Module):
         shortcut = x[:, :x.shape[1]//2, :, :]
         # shortcut = self.scale2(shortcut)
 
+        # print(f"input_std: {torch.std(shortcut).item()}")
+        # print(f"output_std: {torch.std(out).item()}")
         out = out + shortcut
 
         out = self.px(out)
@@ -1482,20 +1550,32 @@ class AdaBlock_thick(nn.Module):
         return out
     
 class AdaBlock_thick_transpose(nn.Module):
-    def __init__(self, inplanes, planes, stride=1):
+    def __init__(self, inplanes, planes, stride=1, ka=1, alpha=0.25, kw=0.2, binary=1, QReLU=True):
         super(AdaBlock_thick_transpose, self).__init__()
 
-        self.conv1 = conv_ada(inplanes, inplanes, kernel_size=3, stride=stride, padding=1, bias=False, w_bit=1)
+        self.move1_ = LearnableBias(inplanes)
+        self.conv1 = conv_ada(inplanes, inplanes, kernel_size=3, stride=stride, padding=1, bias=False, w_bit=binary, a_bit=1, ka=ka, kw=kw)
+        # self.conv1_ = conv_ada(inplanes, inplanes, kernel_size=3, stride=stride, padding=1, bias=False, w_bit=1, a_bit=1)
         # self.maxout1 = Maxout(inplanes)
         self.move1 = LearnableBias(inplanes)
-        self.prelu1 = nn.PReLU(inplanes)
+
+        if QReLU:
+            self.prelu1 = Q_PReLU(inplanes)
+        else:
+            self.prelu1 = nn.PReLU(inplanes)
+
         self.move2 = LearnableBias(inplanes)
 
-
-        self.conv2 = conv_ada(inplanes, inplanes*2, kernel_size=3, stride=stride, padding=1, bias=False, w_bit=1)
+        self.move2_ = LearnableBias(inplanes)
+        self.conv2 = conv_ada(inplanes, inplanes*2, kernel_size=3, stride=stride, padding=1, bias=False, w_bit=binary, a_bit=1, ka=ka+alpha, kw=kw)
+        # self.conv2_ = conv_ada(inplanes, inplanes*2, kernel_size=3, stride=stride, padding=1, bias=False, w_bit=1, a_bit=1)
         # self.maxout2 = Maxout(inplanes*2)
         self.move3 = LearnableBias(inplanes*2)
-        self.prelu2 = nn.PReLU(inplanes*2)
+
+        if QReLU:
+            self.prelu2 = Q_PReLU(inplanes*2)
+        else:
+            self.prelu2 = nn.PReLU(inplanes*2)
         self.move4 = LearnableBias(inplanes*2)
 
         self.px = nn.PixelShuffle(2)
@@ -1508,8 +1588,10 @@ class AdaBlock_thick_transpose(nn.Module):
 
     def forward(self, x):
         
-        out = x
-        # out = self.binary_activation(x)
+        # out1 = self.conv1(x)
+        # out2 = self.conv1_(x)
+        # out = out1 + out2
+        out = self.move1_(x)
         out = self.conv1(out)
         # out = self.maxout1(out)
         out = self.move1(out)
@@ -1517,18 +1599,26 @@ class AdaBlock_thick_transpose(nn.Module):
         out = self.move2(out)
 
         # shortcut = self.scale1(x)
-        out = out + x
-        x = out
+        # print(f"input_std: {torch.std(x).item()}")
+        # print(f"output_std: {torch.std(out).item()}")
+        x = out + x
 
+        # out1 = self.conv2(x)
+        # out2 = self.conv2_(x)
+        # out = out1 + out2
+        out = self.move2_(x)
         out = self.conv2(out)
         # out = self.maxout2(out)
         out = self.move3(out)
         out = self.prelu2(out)
         out = self.move4(out)
 
+
         shortcut = torch.cat((x, x), 1)
         # shortcut = self.scale2(shortcut)
 
+        # print(f"input_std: {torch.std(shortcut).item()}")
+        # print(f"output_std: {torch.std(out).item()}")
         out = out + shortcut
 
         out = self.px(out)
@@ -1538,6 +1628,9 @@ class AdaBlock_thick_transpose(nn.Module):
         assert out.shape[1] == self.planes
 
         return out
+
+
+
     
 class BDJSCC(nn.Module):
     def __init__(self, init_channels=64, channel_type='awgn', snr_db=None, h_real=None, h_imag=None, b_prob=None, b_stddev=None):
@@ -1628,19 +1721,31 @@ class BDJSCC_Binary(nn.Module):
 
 
 class BDJSCC_ada(nn.Module):
-    def __init__(self, init_channels=64, channel_type='awgn', snr_db=None, h_real=None, h_imag=None, b_prob=None, b_stddev=None):
+    def __init__(self, init_channels=64, channel_type='awgn', snr_db=None, h_real=None, h_imag=None, b_prob=None, b_stddev=None, expected_var=1, alpha=0.25, enable_firstdup=False, kernel_size=3):
         super(BDJSCC_ada, self).__init__()
-        self.firstconv = firstconv(3, init_channels)
-        self.layer1 = AdaBlock_thick(init_channels, init_channels*2)
-        self.layer2 = AdaBlock_thick(init_channels*2, init_channels*4)
-        self.layer3 = AdaBlock_thick(init_channels*4, init_channels*8)
-        self.layer3_ = AdaBlock_thick(init_channels*8, init_channels*16)
+        if enable_firstdup:
+            self.firstconv = firstdup(3, init_channels)
+        else:
+            self.firstconv = firstconv(3, init_channels, size=kernel_size, binary=0)
+        ka = expected_var*2
+        self.layer1 = AdaBlock_thick(init_channels, init_channels*2, ka=ka, alpha=alpha)
+        # ka += 2*alpha
+        self.layer2 = AdaBlock_thick(init_channels*2, init_channels*4, ka=ka, alpha=alpha)
+        # ka += 2*alpha
+        self.layer3 = AdaBlock_thick(init_channels*4, init_channels*8, ka=ka, alpha=alpha)
+        # ka += 2*alpha
+        self.layer3_ = AdaBlock_thick(init_channels*8, init_channels*16, ka=ka, alpha=alpha)
         self.channel = Channel(channel_type=channel_type)
-        self.layer4_ = AdaBlock_thick_transpose(init_channels*16, init_channels*8)
-        self.layer4 = AdaBlock_thick_transpose(init_channels*8, init_channels*4)
-        self.layer5 = AdaBlock_thick_transpose(init_channels*4, init_channels*2)
+        self.scale = LearnableScale()
+        ka = expected_var/2
+        self.layer4_ = AdaBlock_thick_transpose(init_channels*16, init_channels*8, ka=ka, alpha=alpha)
+        # ka += 2*alpha
+        self.layer4 = AdaBlock_thick_transpose(init_channels*8, init_channels*4, ka=ka, alpha=alpha)
+        # ka += 2*alpha
+        self.layer5 = AdaBlock_thick_transpose(init_channels*4, init_channels*2, ka=ka, alpha=alpha)
+        # ka += 2*alpha
         self.layer6 = AdaBlock_thick_transpose(init_channels*2, init_channels)
-        self.lastconv = lastconv(init_channels, 3)
+        self.lastconv = lastconv(init_channels, 3, size=kernel_size, binary=0)
         self.final_activation = nn.Sigmoid()
 
         self.snr_db = snr_db
@@ -1656,6 +1761,7 @@ class BDJSCC_ada(nn.Module):
         out = self.layer3(out)
         out = self.layer3_(out)
         out = self.channel(out, self.snr_db, self.h_real, self.h_imag, self.b_prob, self.b_stddev)
+        out = self.scale(out)
         out = self.layer4_(out)
         out = self.layer4(out)
         out = self.layer5(out)
@@ -1663,4 +1769,4 @@ class BDJSCC_ada(nn.Module):
         out = self.lastconv(out)
         out = self.final_activation(out)
 
-        return out   
+        return out

@@ -18,6 +18,13 @@ class Channel(nn.Module):
         super(Channel, self).__init__()
         self.channel_type = channel_type
 
+    def get_snr(self, z_in, snr_db=None):
+        if snr_db is None:
+            self.snr_db = torch.randint(low=0, high=20, size=(z_in.shape[0],), device=z_in.device)
+        else:
+            self.snr_db = torch.full((z_in.shape[0],), int(snr_db), device=z_in.device)
+        return self.snr_db
+
     def forward(self, features, snr_db=None, h_real=None, h_imag=None, b_prob=None, b_stddev=None):
         """
         features:  Tensor of shape [batch_size, ..., 2*dim_z], where the last dimension 
@@ -51,8 +58,10 @@ class Channel(nn.Module):
 
         # If no SNR provided, pick a random integer [1..30] for each batch or for entire batch
         # If you'd like a single random SNR per batch, remove the "batch_size," shape below.
-        if snr_db is None:
-            snr_db = torch.randint(low=1, high=20, size=(batch_size,), device=z_in.device)
+        if isinstance(self.snr_db, torch.Tensor):
+            snr_db = self.snr_db
+        elif snr_db is None:
+            snr_db = torch.randint(low=0, high=20, size=(batch_size,), device=z_in.device)
         elif isinstance(snr_db, float) or isinstance(snr_db, int):
             # expand to match batch size
             snr_db = torch.full((batch_size,), int(snr_db), device=z_in.device)

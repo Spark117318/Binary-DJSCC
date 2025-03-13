@@ -4,3 +4,5 @@ images/
 runs/
 internal_output/
 .empty/
+results/
+weight_distributions/

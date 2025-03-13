@@ -15,7 +15,8 @@ class AFlayer(nn.Module):
     def forward(self,x,snr):
         b,c,_,_ = x.size()
         y = self.avg_pool(x).view(b,c)
-        snr = torch.full((b, 1), snr)
+        # snr = torch.full((b, 1), snr)
+        snr = snr.view(-1,1)
         snr = snr.to(y.device)
         y = torch.cat([snr,y],1)
         y = self.fc(y)

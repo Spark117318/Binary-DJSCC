@@ -4,7 +4,7 @@ import torchvision.transforms as transforms
 from bdjscc import BDJSCC_ada as model
 from train import store_test_image
 
-torch.cuda.set_device(1)
+torch.cuda.set_device(0)
 
 batch_size = 256
 
